@@ -1,0 +1,38 @@
+[build-system]
+requires = ["hatchling>=1.25"]
+build-backend = "hatchling.build"
+
+[project]
+name = "mcp-policy-gateway"
+version = "0.1.0"
+description = "Policy-first MCP server reference implementation for scoped data access, approval gates, and auditable agent actions."
+readme = "README.md"
+requires-python = ">=3.11"
+license = {text = "MIT"}
+authors = [{name = "Juan Carlos Orrego Díaz"}]
+keywords = ["mcp", "model-context-protocol", "agent-safety", "authorization", "ai-agents"]
+classifiers = [
+  "Programming Language :: Python :: 3",
+  "License :: OSI Approved :: MIT License",
+]
+dependencies = ["mcp>=1.9,<2.0"]
+
+[project.optional-dependencies]
+dev = ["pytest>=8.0", "ruff>=0.8"]
+
+[project.scripts]
+mcp-policy-gateway = "mcp_policy_gateway.server:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/mcp_policy_gateway"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM"]
