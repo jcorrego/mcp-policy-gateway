@@ -22,7 +22,7 @@ MCP client / agent
        │ tool call
        ▼
 FastMCP stdio adapter
-       │ verified principal (demo fixture here)
+       │ JWT verified with operator-pinned public key (at startup and per call)
        ▼
 GatewayService ──► PolicyEngine ──► allow / deny / require approval
        │                 │
@@ -30,7 +30,7 @@ GatewayService ──► PolicyEngine ──► allow / deny / require approval
 synthetic domain data   structured audit event
 ```
 
-In a production deployment, the principal would be derived from a verified identity/session outside the model context. Never accept `tenant_id`, roles, or scopes from a tool argument or model output.
+The launcher supplies a JWT, issuer, audience and pinned public key through its environment. The adapter derives the principal from the verified session, outside model-controlled arguments. The bundled test issuer exists only for synthetic tests and the demo; it is not an OIDC provider. See [ADR 001](docs/adr/001-verified-session.md).
 
 ## Tools
 
@@ -49,15 +49,16 @@ python -m venv .venv
 .venv/bin/pip install -e '.[dev]'
 .venv/bin/pytest
 .venv/bin/ruff check .
+.venv/bin/python -m mcp_policy_gateway.demo
 ```
 
-Run as an MCP stdio server:
+The demo generates a temporary RSA keypair and JWT, starts a real MCP stdio subprocess, and prints an allowed read, cross-tenant denial and approval-required response. Run as an MCP stdio server with your trusted launcher:
 
 ```bash
 .venv/bin/mcp-policy-gateway
 ```
 
-The adapter uses a deliberately fixed demo principal for local exploration. Real identity propagation is intentionally documented as a production integration concern rather than faked here.
+The launcher must set `GATEWAY_ID_TOKEN`, `GATEWAY_JWT_PUBLIC_KEY_FILE`, `GATEWAY_ISSUER` and `GATEWAY_AUDIENCE`. The key file contains only the issuer's public key. The JWT must be signed with RS256 and contain `iss`, `aud`, `sub`, `tenant_id`, a space-delimited `scope`, `iat` and `exp`. Missing or invalid settings fail startup. Never pass the token as a tool argument or commit it to this repository. These launch variables are for a one-identity stdio process, not multi-tenant remote transport.
 
 ## Demonstrated abuse controls
 
@@ -69,9 +70,11 @@ The tests prove the gateway:
 4. returns `require_approval` rather than mutating account state; and
 5. rejects state-changing requests that omit a reason or idempotency key.
 
+The identity tests also exercise expired/wrong-audience tokens, bad signatures, malformed claims, untrusted tenant/scope arguments and a real MCP client/server exchange.
+
 ## Threat model and non-goals
 
-See [THREAT_MODEL.md](THREAT_MODEL.md). The design is intentionally narrow: it demonstrates a policy boundary around MCP tools, not full identity infrastructure, durable audit storage, secrets management, or a payment/ledger system.
+See [THREAT_MODEL.md](THREAT_MODEL.md). This is a pinned-key JWT verification seam, not full OIDC discovery, key rotation, revocation, durable audit storage, secrets management or a payment/ledger system.
 
 ## Interview walkthrough
 
