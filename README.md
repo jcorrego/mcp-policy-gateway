@@ -30,7 +30,7 @@ GatewayService ──► PolicyEngine ──► allow / deny / require approval
 synthetic domain data   structured audit event
 ```
 
-The launcher supplies a JWT, issuer, audience and pinned public key through its environment. The adapter derives the principal from the verified session, outside model-controlled arguments. The bundled test issuer exists only for synthetic tests and the demo; it is not an OIDC provider. See [ADR 001](docs/adr/001-verified-session.md).
+The launcher supplies a JWT, issuer, audience and pinned public key through its environment. The adapter derives the principal from the verified session, outside model-controlled arguments. The bundled test issuer exists only for synthetic tests and the demo; it is not an OIDC provider. The policy engine loads a versioned configuration snapshot at startup. See [ADR 001](docs/adr/001-verified-session.md) and [ADR 002](docs/adr/002-versioned-policy.md).
 
 ## Tools
 
@@ -59,6 +59,8 @@ The demo generates a temporary RSA keypair and JWT, starts a real MCP stdio subp
 ```
 
 The launcher must set `GATEWAY_ID_TOKEN`, `GATEWAY_JWT_PUBLIC_KEY_FILE`, `GATEWAY_ISSUER` and `GATEWAY_AUDIENCE`. The key file contains only the issuer's public key. The JWT must be signed with RS256 and contain `iss`, `aud`, `sub`, `tenant_id`, a space-delimited `scope`, `iat` and `exp`. Missing or invalid settings fail startup. Never pass the token as a tool argument or commit it to this repository. These launch variables are for a one-identity stdio process, not multi-tenant remote transport.
+
+The installed package uses [`policy-v1.json`](src/mcp_policy_gateway/policy-v1.json) by default. To deploy a reviewed policy file, set `GATEWAY_POLICY_FILE` to its absolute path in the trusted launcher. Each rule specifies `scope` and `risk`; all three actions must be present, and `request_account_freeze` must retain `mutation` risk. Invalid configurations abort startup. Tool results and audit events include `policy_version`; denials include a machine-readable `reason`. A running server keeps its startup snapshot, so restart it to apply a new file. The version is an operator-provided label, not cryptographic proof of policy contents.
 
 ## Demonstrated abuse controls
 

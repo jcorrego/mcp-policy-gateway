@@ -176,3 +176,49 @@ def test_mcp_session_ignores_model_identity_and_denies_cross_tenant(issuer_keys,
                 )
 
     asyncio.run(exercise())
+
+
+def test_stdio_versioned_policy_override_and_invalid_startup(issuer_keys, tmp_path):
+    key, public = issuer_keys
+    public_file = tmp_path / "issuer.pem"
+    public_file.write_bytes(public)
+    policy_file = tmp_path / "policy.json"
+    policy = {
+        "version": "test-stdio-v2",
+        "actions": {
+            "get_case": {"scope": "gateway:cases.read", "risk": "read"},
+            "get_account_summary": {"scope": "gateway:get_account_summary", "risk": "read"},
+            "request_account_freeze": {
+                "scope": "gateway:request_account_freeze", "risk": "mutation"
+            },
+        },
+    }
+    policy_file.write_text(json.dumps(policy), encoding="utf-8")
+    env = {
+        **os.environ, "GATEWAY_ID_TOKEN": signed(key),
+        "GATEWAY_JWT_PUBLIC_KEY_FILE": str(public_file),
+        "GATEWAY_ISSUER": ISSUER, "GATEWAY_AUDIENCE": AUDIENCE,
+        "GATEWAY_POLICY_FILE": str(policy_file),
+    }
+
+    async def exercise():
+        params = StdioServerParameters(
+            command=sys.executable, args=["-m", "mcp_policy_gateway.server"], env=env
+        )
+        async with stdio_client(params) as (read, write), ClientSession(read, write) as session:
+            await session.initialize()
+            response = await session.call_tool("get_case", {"case_id": "case_red_01"})
+            assert isinstance(response.content[0], TextContent)
+            result = json.loads(response.content[0].text)
+            assert result["reason"] == "missing_scope"
+            assert result["policy_version"] == "test-stdio-v2"
+
+    asyncio.run(exercise())
+    policy["actions"]["request_account_freeze"]["risk"] = "read"
+    policy_file.write_text(json.dumps(policy), encoding="utf-8")
+    result = subprocess.run(
+        [sys.executable, "-m", "mcp_policy_gateway.server"],
+        input="", capture_output=True, text=True, env=env, timeout=10,
+    )
+    assert result.returncode != 0
+    assert "invalid_policy_config" in result.stderr

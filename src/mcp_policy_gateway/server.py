@@ -1,11 +1,13 @@
 """stdio MCP adapter. Authenticate at launch and again on each tool call."""
 
+import os
 from collections.abc import Callable
 
 from mcp.server.fastmcp import FastMCP
 
 from .identity import InvalidSessionError, principal_from_environment
 from .models import Principal
+from .policy import PolicyConfigError, PolicyEngine, load_policy
 from .service import GatewayService
 
 
@@ -41,7 +43,11 @@ def main() -> None:
         principal_from_environment()
     except InvalidSessionError as exc:
         raise SystemExit("invalid_session: configure a verified startup token") from exc
-    build_server(principal_from_environment).run(transport="stdio")
+    try:
+        policy = PolicyEngine(load_policy(os.environ.get("GATEWAY_POLICY_FILE")))
+    except PolicyConfigError as exc:
+        raise SystemExit("invalid_policy_config: configure a valid versioned policy") from exc
+    build_server(principal_from_environment, GatewayService(policy)).run(transport="stdio")
 
 
 if __name__ == "__main__":
