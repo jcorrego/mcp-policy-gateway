@@ -38,6 +38,15 @@ class PolicyConfig:
     actions: Mapping[str, ActionRule]
 
 
+def _unique_object(pairs: list[tuple[str, object]]) -> dict:
+    result: dict = {}
+    for key, value in pairs:
+        if key in result:
+            raise ValueError("duplicate policy key")
+        result[key] = value
+    return result
+
+
 def load_policy(path: str | Path | None = None) -> PolicyConfig:
     try:
         text = (
@@ -45,7 +54,7 @@ def load_policy(path: str | Path | None = None) -> PolicyConfig:
             if path is not None
             else files("mcp_policy_gateway").joinpath("policy-v1.json").read_text(encoding="utf-8")
         )
-        data = json.loads(text)
+        data = json.loads(text, object_pairs_hook=_unique_object)
         if not isinstance(data, dict) or set(data) != {"version", "actions"}:
             raise ValueError("expected version and actions")
         version = data["version"]

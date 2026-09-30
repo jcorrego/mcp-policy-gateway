@@ -80,6 +80,21 @@ def test_missing_and_malformed_configs_fail_closed(tmp_path):
         load_policy(path)
 
 
+@pytest.mark.parametrize(
+    "raw",
+    [
+        '{"version":"one","version":"two","actions":{}}',
+        '{"version":"one","actions":{"get_case":{"scope":"gateway:get_case",'
+        '"scope":"gateway:other","risk":"read"}}}',
+    ],
+)
+def test_duplicate_keys_fail_before_rule_validation(tmp_path, raw):
+    path = tmp_path / "duplicate.json"
+    path.write_text(raw, encoding="utf-8")
+    with pytest.raises(PolicyConfigError, match="invalid_policy_config"):
+        load_policy(path)
+
+
 def test_config_is_snapshotted_not_reloaded_mid_session(tmp_path):
     path = write_config(tmp_path, configuration())
     gateway = GatewayService(PolicyEngine(load_policy(path)))

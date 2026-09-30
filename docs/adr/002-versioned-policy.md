@@ -2,7 +2,7 @@
 
 ## Decision
 
-Bundle `policy-v1.json` with the installed package. An operator may supply a different file through `GATEWAY_POLICY_FILE` before launching the stdio process. The loader requires a nonempty version, exactly one rule for each exposed tool, an explicit single scope per tool and the tool's fixed risk class. The freeze tool's `mutation` risk cannot be downgraded by configuration. A malformed, missing or incomplete file aborts startup; there is no permissive fallback. Unknown actions deny. Every decision and in-memory audit event carries the loaded policy version and explicit reason.
+Bundle `policy-v1.json` with the installed package. An operator may supply a different file through `GATEWAY_POLICY_FILE` before launching the stdio process. The loader requires a nonempty version, exactly one rule for each exposed tool, an explicit single scope per tool and the tool's fixed risk class. Duplicate JSON keys are rejected rather than silently taking the last entry. The freeze tool's `mutation` risk cannot be downgraded by configuration. A malformed, missing or incomplete file aborts startup; there is no permissive fallback. Unknown actions deny. Every decision and in-memory audit event carries the loaded policy version and explicit reason.
 
 ## Why
 
