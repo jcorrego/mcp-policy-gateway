@@ -48,6 +48,7 @@ class PolicyDecision:
     decision: Decision
     reason: str
     risk: RiskLevel
+    policy_version: str
 
 
 @dataclass(frozen=True)
@@ -57,6 +58,7 @@ class AuditEvent:
     tenant_id: str
     decision: Decision
     reason: str
+    policy_version: str
     metadata: dict[str, Any]
 
     def to_dict(self) -> dict[str, Any]:

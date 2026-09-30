@@ -4,7 +4,7 @@ from dataclasses import asdict
 from typing import Any
 
 from .data import ACCOUNTS, CASES
-from .models import AuditEvent, Decision, Principal, RiskLevel
+from .models import AuditEvent, Decision, PolicyDecision, Principal
 from .policy import PolicyEngine
 
 
@@ -24,7 +24,6 @@ class GatewayService:
             principal,
             action="get_case",
             resource_tenant=case.tenant_id,
-            risk=RiskLevel.READ,
         )
         if decision.decision is not Decision.ALLOW:
             return self._decision(principal, "get_case", decision, {"case_id": case_id})
@@ -40,7 +39,6 @@ class GatewayService:
             principal,
             action="get_account_summary",
             resource_tenant=account.tenant_id,
-            risk=RiskLevel.READ,
         )
         if decision.decision is not Decision.ALLOW:
             return self._decision(
@@ -80,7 +78,6 @@ class GatewayService:
             principal,
             action="request_account_freeze",
             resource_tenant=account.tenant_id,
-            risk=RiskLevel.MUTATION,
         )
         metadata = {"account_id": account_id, "idempotency_key": idempotency_key}
         return self._decision(principal, "request_account_freeze", decision, metadata)
@@ -90,7 +87,10 @@ class GatewayService:
 
     def _allow(self, principal: Principal, action: str, payload: dict[str, Any]) -> dict[str, Any]:
         self._audit(principal, action, Decision.ALLOW, "policy_satisfied", payload)
-        return {"ok": True, "decision": Decision.ALLOW, **payload}
+        return {
+            "ok": True, "decision": Decision.ALLOW,
+            "policy_version": self.policy.version, **payload,
+        }
 
     def _deny(
         self,
@@ -100,13 +100,16 @@ class GatewayService:
         metadata: dict[str, Any],
     ) -> dict[str, Any]:
         self._audit(principal, action, Decision.DENY, reason, metadata)
-        return {"ok": False, "decision": Decision.DENY, "reason": reason}
+        return {
+            "ok": False, "decision": Decision.DENY, "reason": reason,
+            "policy_version": self.policy.version,
+        }
 
     def _decision(
         self,
         principal: Principal,
         action: str,
-        decision: Any,
+        decision: PolicyDecision,
         metadata: dict[str, Any],
     ) -> dict[str, Any]:
         self._audit(principal, action, decision.decision, decision.reason, metadata)
@@ -115,11 +118,15 @@ class GatewayService:
                 "ok": False,
                 "decision": Decision.REQUIRE_APPROVAL,
                 "reason": decision.reason,
+                "policy_version": decision.policy_version,
                 "message": (
                     "No state was changed. Route this request to an authorized human approver."
                 ),
             }
-        return {"ok": False, "decision": Decision.DENY, "reason": decision.reason}
+        return {
+            "ok": False, "decision": Decision.DENY, "reason": decision.reason,
+            "policy_version": decision.policy_version,
+        }
 
     def _audit(
         self,
@@ -136,6 +143,7 @@ class GatewayService:
                 tenant_id=principal.tenant_id,
                 decision=decision,
                 reason=reason,
+                policy_version=self.policy.version,
                 metadata=metadata,
             )
         )

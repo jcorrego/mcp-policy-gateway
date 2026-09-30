@@ -41,7 +41,7 @@ async def run_demo() -> dict:
         public_file = Path(directory) / "issuer.pem"
         public_file.write_bytes(public)
         env = {
-            **os.environ,
+            **{key: value for key, value in os.environ.items() if not key.startswith("GATEWAY_")},
             "GATEWAY_ID_TOKEN": token,
             "GATEWAY_JWT_PUBLIC_KEY_FILE": str(public_file),
             "GATEWAY_ISSUER": "https://issuer.example.test",

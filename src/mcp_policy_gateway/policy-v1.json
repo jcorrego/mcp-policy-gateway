@@ -1,0 +1,8 @@
+{
+  "version": "2026-09-30.v1",
+  "actions": {
+    "get_case": {"scope": "gateway:get_case", "risk": "read"},
+    "get_account_summary": {"scope": "gateway:get_account_summary", "risk": "read"},
+    "request_account_freeze": {"scope": "gateway:request_account_freeze", "risk": "mutation"}
+  }
+}

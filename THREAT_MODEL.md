@@ -27,6 +27,9 @@
 | Silent authorization failure | Emit structured audit events for allow, deny and approval outcomes. |
 | Spoofed principal in model arguments | The MCP tool schema has no identity fields; the adapter derives a principal only from the verified launch token. |
 | Expired or wrong-audience token | JWT checks issuer, audience, expiry, issuance and signature; invalid startup fails closed and each call revalidates. |
+| Invalid or incomplete policy config | Parse and validate every rule before serving; fix tool risk classes in code and deny unknown actions. |
+
+Policy is an immutable startup snapshot. Decision and audit records carry its version label and explicit reason, but the label is not a content hash. The operator controls the launch environment and must review configuration changes.
 
 ## Deliberate non-goals
 
