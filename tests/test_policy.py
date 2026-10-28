@@ -19,7 +19,11 @@ def configuration() -> dict:
         "actions": {
             "get_case": {"scope": "gateway:cases.read", "risk": "read"},
             "get_account_summary": {"scope": "gateway:accounts.read", "risk": "read"},
-            "request_account_freeze": {"scope": "gateway:freeze.request", "risk": "mutation"},
+            "get_freeze_request": {"scope": "gateway:freeze.read", "risk": "read"},
+            "request_account_freeze": {
+                "scope": "gateway:freeze.request", "risk": "mutation",
+                "approver_scope": "gateway:freeze.approve", "approval_ttl_seconds": 600,
+            },
         },
     }
 
@@ -62,6 +66,21 @@ def test_configured_scopes_and_version_apply_to_allow_deny_and_approval(tmp_path
         lambda d: d["actions"]["get_case"].update(scope=""),
         lambda d: d["actions"]["get_case"].update(scope="gateway:cases.read other"),
         lambda d: d["actions"]["get_case"].update(unexpected="allow"),
+        lambda d: d["actions"]["get_case"].update(approver_scope="gateway:freeze.approve"),
+        lambda d: d["actions"]["request_account_freeze"].pop("approver_scope"),
+        lambda d: d["actions"]["request_account_freeze"].pop("approval_ttl_seconds"),
+        lambda d: d["actions"]["request_account_freeze"].update(approver_scope="approve"),
+        # An agent token holding the request scope must not double as an approver token.
+        lambda d: d["actions"]["request_account_freeze"].update(
+            approver_scope="gateway:freeze.request"
+        ),
+        lambda d: d["actions"]["request_account_freeze"].update(
+            approver_scope="gateway:cases.read"
+        ),
+        lambda d: d["actions"]["request_account_freeze"].update(approval_ttl_seconds=0),
+        lambda d: d["actions"]["request_account_freeze"].update(approval_ttl_seconds=True),
+        lambda d: d["actions"]["request_account_freeze"].update(approval_ttl_seconds=90_000),
+        lambda d: d["actions"]["request_account_freeze"].update(approval_ttl_seconds="600"),
     ],
 )
 def test_unsafe_configs_fail_closed(tmp_path, edit):
