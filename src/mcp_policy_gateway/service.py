@@ -118,8 +118,8 @@ class GatewayService:
         digest = hashlib.sha256(
             json.dumps({"account_id": account_id, "reason": reason}, sort_keys=True).encode()
         ).hexdigest()
-        now = self.clock()
         with self.store.transaction():
+            now = self.clock()  # after the write lock, so lock waits cannot skew timestamps
             existing = self.store.find_by_idempotency(
                 principal.tenant_id, principal.subject, FREEZE, idempotency_key
             )
@@ -205,8 +205,10 @@ class GatewayService:
                 principal, action, "decision_note_required", metadata, correlation_id=request_id
             )
 
-        now = self.clock()
         with self.store.transaction():
+            # Sample time only once the write lock is held: a lock wait that crosses
+            # expires_at must expire the request, not approve it with a stale timestamp.
+            now = self.clock()
             current = self._stored(request_id)
             if current.state is ApprovalState.REQUESTED and now >= current.expires_at:
                 self.store.transition(

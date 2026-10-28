@@ -358,3 +358,35 @@ def test_demo_runs_agent_and_operator_over_real_processes():
         "human_approval_required", "idempotent_replay", "self_approval_forbidden",
         "approved", "execution_started", "executed",
     ]
+
+
+def test_lock_wait_that_crosses_expiry_expires_instead_of_approving(db):
+    """Regression: time must be sampled after the write lock is acquired."""
+    clock = Clock()
+    service = gateway(db, clock=clock)
+    pending = request(service)
+    clock.now = pending["expires_at"] - 1  # still valid when the approver starts
+    locked, release = threading.Event(), threading.Event()
+
+    def hold_write_lock() -> None:
+        other = sqlite3.connect(db, isolation_level=None)
+        other.execute("BEGIN IMMEDIATE")
+        locked.set()
+        release.wait(timeout=5)
+        clock.now = pending["expires_at"]  # expiry passes while the approver waits
+        other.execute("COMMIT")
+        other.close()
+
+    holder = threading.Thread(target=hold_write_lock)
+    holder.start()
+    locked.wait(timeout=5)
+    timer = threading.Timer(0.3, release.set)
+    timer.start()
+    result = service.decide_freeze(HUMAN, pending["request_id"], approve=True, note="late")
+    holder.join()
+    timer.join()
+    assert (result["reason"], result["state"]) == ("approval_expired", "expired")
+    stored = service.store.get(pending["request_id"])
+    assert stored.state is ApprovalState.EXPIRED
+    assert stored.decided_at == pending["expires_at"]
+    assert service.execute_freeze(HUMAN, pending["request_id"])["reason"] == "invalid_transition"
