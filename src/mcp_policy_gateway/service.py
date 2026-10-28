@@ -229,8 +229,9 @@ class GatewayService:
                 approver=principal.subject, decision_note=note, decided_at=now,
             )
             self._audit(
-                principal, action, Decision.ALLOW, target.value, metadata,
-                correlation_id=request_id,
+                principal, action, Decision.ALLOW, target.value,
+                # The rationale belongs in the append-only record, not only the request row.
+                {**metadata, "note": note}, correlation_id=request_id,
             )
         return self._operator_result(request_id, target.value)
 
@@ -300,6 +301,32 @@ class GatewayService:
         if request is None:  # rows are never deleted; treat a vanished row as corruption
             raise RuntimeError("approval_request_missing")
         return request
+
+    def read_audit_trail(self, principal: Principal, request_id: str) -> dict[str, Any]:
+        """Operator read of one request's audit trail; allowed and denied reads are audited."""
+        action = "read_audit_trail"
+        request = self.store.get(request_id)
+        if request is None:
+            return self._deny(principal, action, "unknown_request", {})
+        metadata = {"request_id": request_id}
+        decision = self.policy.authorize_operator(
+            principal, action=request.action, resource_tenant=request.tenant_id, requester=None
+        )
+        if decision.decision is not Decision.ALLOW:
+            return self._decision(principal, action, decision, metadata, correlation_id=request_id)
+        # Denied attempts by other tenants share the correlation id but belong to their audit.
+        events = [
+            event for event in self.audit_log(request_id)
+            if event["tenant_id"] == request.tenant_id
+        ]
+        self._audit(
+            principal, action, Decision.ALLOW, decision.reason, metadata,
+            correlation_id=request_id,
+        )
+        return {
+            "ok": True, "decision": Decision.ALLOW, "policy_version": self.policy.version,
+            "request": request.public_view(), "audit": events,
+        }
 
     def audit_log(self, correlation_id: str | None = None) -> list[dict[str, Any]]:
         return self.store.audit_events(correlation_id)

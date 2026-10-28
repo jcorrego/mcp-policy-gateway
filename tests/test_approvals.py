@@ -390,3 +390,28 @@ def test_lock_wait_that_crosses_expiry_expires_instead_of_approving(db):
     assert stored.state is ApprovalState.EXPIRED
     assert stored.decided_at == pending["expires_at"]
     assert service.execute_freeze(HUMAN, pending["request_id"])["reason"] == "invalid_transition"
+
+
+def test_decision_note_is_in_audit_and_audit_reads_are_audited(db):
+    service = gateway(db)
+    request_id = request(service)["request_id"]
+    service.decide_freeze(HUMAN, request_id, approve=False, note="caller failed verification")
+    decision_event = service.audit_log(request_id)[-1]
+    assert decision_event["reason"] == "rejected"
+    assert decision_event["metadata"]["note"] == "caller failed verification"
+
+    # Agents and other tenants cannot read the trail, and their attempts are recorded.
+    blue = Principal("human-approver-blue", "tenant_blue", frozenset({APPROVE}))
+    for principal, reason in ((AGENT, "missing_approver_scope"), (blue, "cross_tenant_access")):
+        denied = service.read_audit_trail(principal, request_id)
+        assert (denied["ok"], denied["reason"]) == (False, reason)
+        last = service.audit_log(request_id)[-1]
+        assert (last["action"], last["actor"], last["reason"]) == (
+            "read_audit_trail", principal.subject, reason
+        )
+
+    allowed = service.read_audit_trail(HUMAN, request_id)
+    assert allowed["ok"] is True
+    # The blue tenant's denied attempt is kept, but not shown to the red tenant's operator.
+    assert "human-approver-blue" not in {event["actor"] for event in allowed["audit"]}
+    assert service.audit_log(request_id)[-1]["reason"] == "approver_authorized"

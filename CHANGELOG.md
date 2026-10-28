@@ -12,7 +12,7 @@ All notable changes to this reference implementation. Versions follow the roadma
 - Policy rules for mutations declare `approver_scope` and `approval_ttl_seconds`. The loader rejects an approver scope that equals a tool scope.
 - Self-approval, cross-tenant approval and approval without the approver scope are denied. Every decision needs a note.
 - Execution recovers after an unknown upstream outcome: the request stays in `executing`, and a retry with the same request-ID token adds no second effect.
-- Append-only SQLite audit table with per-request correlation IDs. Triggers abort `UPDATE` and `DELETE`.
+- Append-only SQLite audit table with per-request correlation IDs. Triggers abort `UPDATE` and `DELETE`. Decision notes are written into the audit event, and operator reads of an audit trail are audited, whether allowed or denied.
 - `get_freeze_request` MCP read tool, and the account summary reports `frozen` after execution.
 - CI runs the end-to-end demo and uploads its output. A separate CI job tests the declared dependency floors.
 - [ADR 003](docs/adr/003-durable-approvals.md).

@@ -12,7 +12,6 @@ import json
 import sys
 
 from .identity import InvalidSessionError, principal_from_environment
-from .models import Decision
 from .server import service_from_environment
 
 
@@ -40,27 +39,9 @@ def main(argv: list[str] | None = None) -> int:
     elif args.command == "execute":
         result = service.execute_freeze(principal, args.request_id)
     else:
-        result = _audit(service, principal, args.request_id)
+        result = service.read_audit_trail(principal, args.request_id)
     print(json.dumps(result, indent=2, sort_keys=True))
     return 0 if result["ok"] else 1
-
-
-def _audit(service, principal, request_id: str) -> dict:
-    """Operators may read the correlated audit trail of requests in their own tenant."""
-    request = service.store.get(request_id)
-    if request is None:
-        return {"ok": False, "reason": "unknown_request"}
-    decision = service.policy.authorize_operator(
-        principal, action=request.action, resource_tenant=request.tenant_id, requester=None
-    )
-    if decision.decision is not Decision.ALLOW:
-        return {"ok": False, "reason": decision.reason}
-    # Denied attempts by other tenants share the correlation id but belong to their audit.
-    events = [
-        event for event in service.audit_log(correlation_id=request_id)
-        if event["tenant_id"] == request.tenant_id
-    ]
-    return {"ok": True, "request": request.public_view(), "audit": events}
 
 
 if __name__ == "__main__":
