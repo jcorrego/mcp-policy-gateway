@@ -28,6 +28,12 @@
 | Spoofed principal in model arguments | The MCP tool schema has no identity fields; the adapter derives a principal only from the verified launch token. |
 | Expired or wrong-audience token | JWT checks issuer, audience, expiry, issuance and signature; invalid startup fails closed and each call revalidates. |
 | Invalid or incomplete policy config | Parse and validate every rule before serving; fix tool risk classes in code and deny unknown actions. |
+| Agent approves its own mutation | Approve/reject/execute are not MCP tools; the operator CLI requires a separately verified principal with a distinct approver scope and refuses the requester's subject. |
+| Approver token minted from agent scopes | Policy loading fails if the approver scope equals any tool scope. |
+| Duplicate or replayed request | Idempotency keys are unique per tenant, requester and action; a same-payload replay returns the existing request, and a different payload is denied. |
+| Stale or raced decision | Requests expire at their policy TTL; transitions are compare-and-set under a write lock, so only one decision wins. |
+| Timeout after upstream execution | The request stays `executing`; a retry reuses the request ID as the upstream idempotency token, so no second effect occurs. |
+| Audit rewriting by the application | SQLite triggers abort `UPDATE` and `DELETE` on audit events; transitions and their audit events commit atomically. |
 
 Policy is an immutable startup snapshot. Decision and audit records carry its version label and explicit reason, but the label is not a content hash. The operator controls the launch environment and must review configuration changes.
 
@@ -36,8 +42,8 @@ Policy is an immutable startup snapshot. Decision and audit records carry its ve
 This reference implementation does **not** claim to provide:
 
 - OIDC discovery, JWKS rotation, revocation, remote per-request authentication or mTLS;
-- persistent or tamper-evident audit storage;
-- a real approval workflow, payments system, PCI environment or production data source;
+- tamper-evident audit storage (the append-only triggers do not stop someone with write access to the database file);
+- a production approval interface, PostgreSQL deployment, payments system, PCI environment or production data source;
 - DLP classification beyond the explicit minimized response; or
 - protection against a compromised runtime or authorized human operator.
 

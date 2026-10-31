@@ -149,7 +149,8 @@ def test_mcp_session_ignores_model_identity_and_denies_cross_tenant(issuer_keys,
                 await session.initialize()
                 tools = await session.list_tools()
                 assert {tool.name for tool in tools.tools} == {
-                    "get_case", "get_account_summary", "request_account_freeze"
+                    "get_case", "get_account_summary", "request_account_freeze",
+                    "get_freeze_request",
                 }
                 schema = next(t.inputSchema for t in tools.tools if t.name == "get_case")
                 assert "tenant_id" not in schema["properties"]
@@ -188,8 +189,11 @@ def test_stdio_versioned_policy_override_and_invalid_startup(issuer_keys, tmp_pa
         "actions": {
             "get_case": {"scope": "gateway:cases.read", "risk": "read"},
             "get_account_summary": {"scope": "gateway:get_account_summary", "risk": "read"},
+            "get_freeze_request": {"scope": "gateway:get_freeze_request", "risk": "read"},
             "request_account_freeze": {
-                "scope": "gateway:request_account_freeze", "risk": "mutation"
+                "scope": "gateway:request_account_freeze", "risk": "mutation",
+                "approver_scope": "gateway:approve_account_freeze",
+                "approval_ttl_seconds": 600,
             },
         },
     }

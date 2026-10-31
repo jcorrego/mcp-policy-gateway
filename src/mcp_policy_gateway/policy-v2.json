@@ -1,0 +1,14 @@
+{
+  "version": "2026-10-28.v2",
+  "actions": {
+    "get_case": {"scope": "gateway:get_case", "risk": "read"},
+    "get_account_summary": {"scope": "gateway:get_account_summary", "risk": "read"},
+    "get_freeze_request": {"scope": "gateway:get_freeze_request", "risk": "read"},
+    "request_account_freeze": {
+      "scope": "gateway:request_account_freeze",
+      "risk": "mutation",
+      "approver_scope": "gateway:approve_account_freeze",
+      "approval_ttl_seconds": 3600
+    }
+  }
+}

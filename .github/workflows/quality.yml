@@ -23,3 +23,29 @@ jobs:
         run: ruff check .
       - name: Test
         run: pytest
+      - name: Demo (agent over MCP stdio + operator approval)
+        run: python -m mcp_policy_gateway.demo > demo-output.json
+      - uses: actions/upload-artifact@v4
+        with:
+          name: demo-output
+          path: demo-output.json
+
+  dependency-floor:
+    # The lower bounds in pyproject.toml are a claim; install exactly those and run the suite.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install declared floors
+        run: python -m pip install -e '.[dev]' 'mcp==1.22.0' 'pyjwt[crypto]==2.10.1'
+      - name: Verify installed floors
+        run: |
+          python - <<'EOF'
+          from importlib.metadata import version
+          assert version("mcp") == "1.22.0", version("mcp")
+          assert version("pyjwt") == "2.10.1", version("pyjwt")
+          EOF
+      - name: Test
+        run: pytest

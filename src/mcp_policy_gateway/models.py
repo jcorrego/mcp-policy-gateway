@@ -60,6 +60,7 @@ class AuditEvent:
     reason: str
     policy_version: str
     metadata: dict[str, Any]
+    correlation_id: str
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
