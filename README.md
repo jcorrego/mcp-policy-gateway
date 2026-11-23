@@ -56,6 +56,8 @@ mcp-policy-gateway-approvals audit   REQUEST_ID
 
 The CLI reads the approver's own token from the same `GATEWAY_*` launch variables and requires `GATEWAY_STATE_DB`. Request states are `requested → approved | rejected | expired` and `approved → executing → executed`; any other transition is refused.
 
+Execution claims a durable 30-second lease before calling the upstream. Another attempt during that lease returns `execution_in_progress` and `retry_after_seconds` without calling the upstream. A process that dies leaves the lease in place until expiry, after which a new attempt can resume. An owner that finishes after expiry or takeover gets `execution_lease_lost` and cannot finalize the request or delete its successor's lease. Ordinary upstream errors release the current lease for immediate retry. See [ADR 004](docs/adr/004-execution-leases.md) for the crash/retry contract and clock assumptions. This lease reduces duplicate calls; upstream idempotency still prevents duplicate effects after expiry.
+
 ## Quickstart
 
 Requires Python 3.11+.
@@ -98,7 +100,11 @@ The tests prove the gateway:
 8. refuses illegal transitions, approval after expiry and execution before approval;
 9. produces exactly one approval decision when six approvers race;
 10. resumes from `executing` after a timeout that follows upstream execution, with one effect and a complete correlated audit trail; and
-11. aborts any `UPDATE` or `DELETE` on the audit table.
+11. aborts any `UPDATE` or `DELETE` on the audit table;
+12. blocks a competing executor while a lease is live, without another upstream call;
+13. recovers after killing a real executor process after its upstream effect, waiting for lease expiry and preserving one effect;
+14. rejects stale success and failure completions without releasing a successor's lease; and
+15. rolls back lease claims and releases with the associated state and audit writes.
 
 The identity tests also exercise expired/wrong-audience tokens, bad signatures, malformed claims, untrusted tenant/scope arguments and a real MCP client/server exchange.
 
@@ -119,7 +125,7 @@ A concise way to explain the project:
 .venv/bin/ruff check .
 ```
 
-CI runs lint, tests and the demo on pushes and pull requests, and uploads the demo output as an artifact. A second job installs the declared dependency floors (`mcp==1.22.0`, `pyjwt==2.10.1`) and runs the suite again. Older `mcp` releases fail to import against current `pydantic`.
+CI runs lint, tests and the demo on pushes and pull requests, and uploads the demo output and JUnit test results as artifacts, including test results on failure. A second job installs the declared dependency floors (`mcp==1.22.0`, `pyjwt==2.10.1`) and runs the suite again. Older `mcp` releases fail to import against current `pydantic`. [ROADMAP.md](ROADMAP.md) separates delivered increments from unimplemented and untagged releases.
 
 ## License
 

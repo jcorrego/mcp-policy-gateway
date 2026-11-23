@@ -23,7 +23,7 @@ The roadmap names PostgreSQL. This increment uses the standard-library `sqlite3`
 ## Consequences and limits
 
 - The upstream is a synthetic table that stands in for an external system honouring an idempotency token. The design relies on that guarantee. An upstream without idempotency would need a reconciliation query before any retry, and this reference does not implement one.
-- Two operators who retry the same `executing` request at the same moment can both reach the upstream. The upstream token prevents a duplicate effect, but a lease would avoid the duplicate call.
+- [ADR 004](004-execution-leases.md) adds a durable executor lease to block duplicate calls before expiry. Upstream idempotency is still required when a paused worker overlaps a successor after expiry.
 - The append-only triggers stop accidental or application-level edits. They do not stop someone who has write access to the database file, who can drop the triggers. There is no hash chain or external log shipping.
 - Without `GATEWAY_STATE_DB` the MCP server uses an in-memory store, which is fine for tests but not durable. The operator CLI refuses to run without a database file.
 - Expiry is evaluated lazily at decision time. No sweeper materializes expired rows.

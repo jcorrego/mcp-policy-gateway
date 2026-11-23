@@ -22,13 +22,16 @@ jobs:
       - name: Lint
         run: ruff check .
       - name: Test
-        run: pytest
+        run: pytest --junitxml=test-results.xml
       - name: Demo (agent over MCP stdio + operator approval)
         run: python -m mcp_policy_gateway.demo > demo-output.json
       - uses: actions/upload-artifact@v4
+        if: always()
         with:
           name: demo-output
-          path: demo-output.json
+          path: |
+            demo-output.json
+            test-results.xml
 
   dependency-floor:
     # The lower bounds in pyproject.toml are a claim; install exactly those and run the suite.
@@ -48,4 +51,9 @@ jobs:
           assert version("pyjwt") == "2.10.1", version("pyjwt")
           EOF
       - name: Test
-        run: pytest
+        run: pytest --junitxml=floor-test-results.xml
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: dependency-floor-tests
+          path: floor-test-results.xml

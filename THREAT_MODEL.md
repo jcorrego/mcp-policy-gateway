@@ -33,9 +33,13 @@
 | Duplicate or replayed request | Idempotency keys are unique per tenant, requester and action; a same-payload replay returns the existing request, and a different payload is denied. |
 | Stale or raced decision | Requests expire at their policy TTL; transitions are compare-and-set under a write lock, so only one decision wins. |
 | Timeout after upstream execution | The request stays `executing`; a retry reuses the request ID as the upstream idempotency token, so no second effect occurs. |
+| Concurrent executor calls | A durable 30-second lease blocks competing calls before expiry. Claim, state and audit commit under one write lock. |
+| Stale executor completion | Finalization checks both random attempt owner and unexpired lease under the write lock. Stale success or failure cannot release a successor's lease. |
 | Audit rewriting by the application | SQLite triggers abort `UPDATE` and `DELETE` on audit events; transitions and their audit events commit atomically. |
 
 Policy is an immutable startup snapshot. Decision and audit records carry its version label and explicit reason, but the label is not a content hash. The operator controls the launch environment and must review configuration changes.
+
+Lease expiry is not upstream cancellation or upstream fencing. A paused executor can still overlap a successor after expiry. The reference requires an idempotent upstream token and a trusted shared wall clock. There is no lease renewal, upstream reconciliation, or transport-level execution timeout. The [lease ADR](docs/adr/004-execution-leases.md) describes recovery and mixed-version limits.
 
 ## Deliberate non-goals
 

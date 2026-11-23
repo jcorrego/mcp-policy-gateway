@@ -4,6 +4,14 @@ All notable changes to this reference implementation. Versions follow the roadma
 
 ## Unreleased: durable approval and audit (first part of release 0.3)
 
+### Executor lease increment
+
+- Durable 30-second, per-attempt execution leases block competing upstream calls and return `execution_in_progress` with a retry delay.
+- A crashed process can be replaced at lease expiry. Stale success and exception handlers cannot finalize a request or release a successor's lease.
+- Lease ownership, request state and audit events commit together. Additive table creation supports existing SQLite files and legacy `executing` rows. Stop old executors before upgrading.
+- Ten regression/control cases cover live contention, stale success and failure, exact-expiry recovery after killing a real process, upgrade, lock waits, authorization and audit rollback. CI retains JUnit results for both SDK versions.
+- [ADR 004](docs/adr/004-execution-leases.md). No upstream fencing or cancellation, lease renewal, PostgreSQL adapter or release tag.
+
 ### Added
 
 - Freeze requests are stored as approval requests with states `requested`, `approved`, `rejected`, `expired`, `executing` and `executed`. The store enforces the legal edges with compare-and-set updates under a write lock.
@@ -25,7 +33,7 @@ All notable changes to this reference implementation. Versions follow the roadma
 ### Still open for 0.3
 
 - PostgreSQL adapter (SQLite only today).
-- A lease for concurrent executors, and reconciliation for upstreams that are not idempotent.
+- Reconciliation for upstreams that are not idempotent. The lease alone does not protect an external effect after expiry.
 
 ## Release 0.2 work (merged, not tagged)
 
