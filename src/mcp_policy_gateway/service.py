@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import math
 import re
 import time
 import uuid
@@ -22,6 +23,7 @@ from .store import (
 
 FREEZE = "request_account_freeze"
 MAX_TEXT = 500
+EXECUTION_LEASE_SECONDS = 30
 IDEMPOTENCY_KEY = re.compile(r"[A-Za-z0-9][A-Za-z0-9._:-]{0,127}")
 NO_CHANGE = (
     "No state was changed. Route this request to an authorized human approver; "
@@ -236,7 +238,7 @@ class GatewayService:
         return self._operator_result(request_id, target.value)
 
     def execute_freeze(self, principal: Principal, request_id: str) -> dict[str, Any]:
-        """Apply an approved freeze exactly once, resuming safely after an unknown outcome."""
+        """Lease an approved freeze attempt; upstream idempotency protects the effect."""
         action = "execute_account_freeze"
         request = self.store.get(request_id)
         if request is None:
@@ -248,7 +250,9 @@ class GatewayService:
         if decision.decision is not Decision.ALLOW:
             return self._decision(principal, action, decision, metadata, correlation_id=request_id)
 
+        owner = uuid.uuid4().hex  # per attempt, never derived from agent or operator arguments
         with self.store.transaction():
+            now = self.clock()  # lock waits must not permit takeover with a stale timestamp
             current = self._stored(request_id)
             if current.state is ApprovalState.EXECUTED:
                 self._audit(
@@ -256,43 +260,62 @@ class GatewayService:
                     correlation_id=request_id,
                 )
                 return self._operator_result(request_id, "already_executed")
-            if current.state is ApprovalState.APPROVED:
-                self.store.transition(request_id, ApprovalState.APPROVED, ApprovalState.EXECUTING)
-                step = "execution_started"
-            elif current.state is ApprovalState.EXECUTING:
-                # A previous attempt may or may not have reached the upstream system.
-                step = "execution_resumed"
-            else:
+            if current.state not in {ApprovalState.APPROVED, ApprovalState.EXECUTING}:
                 return self._deny(
                     principal, action, "invalid_transition", metadata,
                     correlation_id=request_id, state=current.state,
                 )
+            if not self.store.claim_execution(request_id, owner, now, EXECUTION_LEASE_SECONDS):
+                lease = self.store.execution_lease(request_id)
+                assert lease is not None  # failed claim means an unexpired row under this lock
+                result = self._deny(
+                    principal, action, "execution_in_progress", metadata,
+                    correlation_id=request_id, state=current.state,
+                )
+                result["retry_after_seconds"] = max(1, math.ceil(lease[1] - now))
+                return result
+            step = "execution_resumed"
+            if current.state is ApprovalState.APPROVED:
+                self.store.transition(request_id, ApprovalState.APPROVED, ApprovalState.EXECUTING)
+                step = "execution_started"
             self._audit(principal, action, Decision.ALLOW, step, metadata, request_id)
 
         try:
             # The request id is the upstream idempotency token, so a retry adds no effect.
             self.upstream.apply_freeze(request_id, current.account_id)
         except Exception as exc:  # any failure leaves the upstream outcome unknown
-            self._audit(
-                principal, action, Decision.ALLOW, "upstream_outcome_unknown",
-                {**metadata, "error": type(exc).__name__}, correlation_id=request_id,
-            )
-            result = self._operator_result(request_id, "upstream_outcome_unknown")
-            result["ok"] = False
-            result["message"] = "Retry execute with the same request_id; upstream is idempotent."
-            return result
+            with self.store.transaction():
+                now = self.clock()
+                lease = self.store.execution_lease(request_id)
+                if lease is None or lease[0] != owner or lease[1] <= now:
+                    return self._deny(
+                        principal, action, "execution_lease_lost", metadata, request_id
+                    )
+                self.store.release_execution(request_id, owner)
+                self._audit(
+                    principal, action, Decision.ALLOW, "upstream_outcome_unknown",
+                    {**metadata, "error": type(exc).__name__}, correlation_id=request_id,
+                )
+                result = self._operator_result(request_id, "upstream_outcome_unknown")
+                result["ok"] = False
+                result["message"] = (
+                    "Retry execute with the same request_id; upstream is idempotent."
+                )
+                return result
 
         with self.store.transaction():
-            latest = self._stored(request_id)
-            outcome = "already_executed"
-            if latest.state is ApprovalState.EXECUTING:
-                self.store.transition(
-                    request_id, ApprovalState.EXECUTING, ApprovalState.EXECUTED,
-                    executed_at=self.clock(),
+            now = self.clock()
+            lease = self.store.execution_lease(request_id)
+            if lease is None or lease[0] != owner or lease[1] <= now:
+                return self._deny(
+                    principal, action, "execution_lease_lost", metadata, request_id
                 )
-                outcome = "executed"
-            self._audit(principal, action, Decision.ALLOW, outcome, metadata, request_id)
-        return self._operator_result(request_id, outcome)
+            self.store.transition(
+                request_id, ApprovalState.EXECUTING, ApprovalState.EXECUTED, executed_at=now
+            )
+            self.store.release_execution(request_id, owner)
+            self._audit(principal, action, Decision.ALLOW, "executed", metadata, request_id)
+        return self._operator_result(request_id, "executed")
 
     # ---------------------------------------------------------------------- audit
 

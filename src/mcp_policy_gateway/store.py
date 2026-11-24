@@ -63,6 +63,11 @@ CREATE TABLE IF NOT EXISTS approval_requests (
     executed_at REAL,
     UNIQUE (tenant_id, requester, action, idempotency_key)
 );
+CREATE TABLE IF NOT EXISTS execution_leases (
+    request_id TEXT PRIMARY KEY REFERENCES approval_requests (request_id),
+    owner TEXT NOT NULL,
+    expires_at REAL NOT NULL
+);
 CREATE TABLE IF NOT EXISTS audit_events (
     seq INTEGER PRIMARY KEY AUTOINCREMENT,
     recorded_at REAL NOT NULL,
@@ -214,6 +219,28 @@ class ApprovalStore:
         )
         if cursor.rowcount != 1:
             raise TransitionConflict("state_changed")
+
+    def claim_execution(self, request_id: str, owner: str, now: float, ttl: float) -> bool:
+        """Claim or take over an expired lease. Caller must hold the write transaction."""
+        cursor = self._db.execute(
+            "INSERT INTO execution_leases (request_id, owner, expires_at) VALUES (?, ?, ?) "
+            "ON CONFLICT (request_id) DO UPDATE SET owner = excluded.owner, "
+            "expires_at = excluded.expires_at WHERE execution_leases.expires_at <= ?",
+            (request_id, owner, now + ttl, now),
+        )
+        return cursor.rowcount == 1
+
+    def execution_lease(self, request_id: str) -> tuple[str, float] | None:
+        row = self._db.execute(
+            "SELECT owner, expires_at FROM execution_leases WHERE request_id = ?", (request_id,)
+        ).fetchone()
+        return (row["owner"], row["expires_at"]) if row else None
+
+    def release_execution(self, request_id: str, owner: str) -> None:
+        """A stale worker may never delete a successor's lease."""
+        self._db.execute(
+            "DELETE FROM execution_leases WHERE request_id = ? AND owner = ?", (request_id, owner)
+        )
 
     def append_audit(self, event: AuditEvent, recorded_at: float) -> None:
         self._db.execute(
